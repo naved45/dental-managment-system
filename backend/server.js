@@ -42,9 +42,12 @@ app.get("/", (req, res) => res.send("Dental Management API running"));
 const PORT = process.env.PORT || 5000;
 
 mongoose
-  .connect(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/dental_management", {
-    serverSelectionTimeoutMS: 5000,
-  })
+  .connect(
+    process.env.MONGO_URI || "mongodb://127.0.0.1:27017/dental_management",
+    {
+      serverSelectionTimeoutMS: 5000,
+    },
+  )
   .then(() => {
     console.log("MongoDB connected");
     app.listen(PORT, () => {
@@ -55,7 +58,9 @@ mongoose
   .catch((err) => {
     console.error("MongoDB connection error:", err.message);
     // still start server so API structure can be inspected/tested
-    app.listen(PORT, () => console.log(`Server running on port ${PORT} (DB not connected)`));
+    app.listen(PORT, () =>
+      console.log(`Server running on port ${PORT} (DB not connected)`),
+    );
   });
 
 module.exports = app;

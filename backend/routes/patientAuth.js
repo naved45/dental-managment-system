@@ -11,6 +11,10 @@ const genToken = (patient) =>
     { expiresIn: "30d" }
   );
 
+  router.get("/test", (req, res) => {
+  res.json({ message: "Patient auth route is working" });
+});
+s
 // Step 1 & 2: Patient registration + JWT issued immediately on success.
 // If a Patient record already exists with this email/phone (added by clinic staff),
 // this links portal access to that existing record instead of creating a duplicate.
