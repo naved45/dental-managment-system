@@ -29,8 +29,17 @@ export function PatientAuthProvider({ children }) {
     setPatient(null);
   };
 
+  const markEmailVerified = () => {
+    setPatient((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, emailVerified: true };
+      localStorage.setItem("patientUser", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   return (
-    <PatientAuthContext.Provider value={{ patient, login, register, logout }}>
+    <PatientAuthContext.Provider value={{ patient, login, register, logout, markEmailVerified }}>
       {children}
     </PatientAuthContext.Provider>
   );

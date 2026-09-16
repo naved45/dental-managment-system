@@ -27,6 +27,8 @@ import PatientPayments from "./pages/patient/PatientPayments";
 import PatientRecords from "./pages/patient/PatientRecords";
 import PatientBookAppointment from "./pages/patient/PatientBookAppointment";
 import PatientDoctors from "./pages/patient/PatientDoctors";
+import VerifyEmail from "./pages/VerifyEmail";
+import RealtimeNotifications from "./components/RealtimeNotifications";
 
 export default function App() {
   return (
@@ -35,10 +37,12 @@ export default function App() {
         <AuthProvider>
           <PatientAuthProvider>
             <BrowserRouter>
+              <RealtimeNotifications />
               <Routes>
                 <Route path="/" element={<Landing />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
+                <Route path="/verify-email" element={<VerifyEmail />} />
                 <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
                 <Route path="/patients" element={<PrivateRoute><Patients /></PrivateRoute>} />
                 <Route path="/patients/:id" element={<PrivateRoute><PatientDetail /></PrivateRoute>} />

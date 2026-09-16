@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Users, UserRound, CalendarCheck2, ChevronLeft, ChevronRight, CalendarPlus, UserPlus } from "lucide-react";
-import Layout from "../components/Layout";
+import { Users, UserRound, BellRing, ChevronLeft, ChevronRight, CalendarPlus, UserPlus, Check, X, MailWarning } from "lucide-react";import Layout from "../components/Layout";
 import api from "../api/axios";
+import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const STATUS_BADGE = {
-  Scheduled: "bg-amber-100 text-amber-700",
+  Pending: "bg-amber-100 text-amber-700",
+  Scheduled: "bg-blue-100 text-blue-700",
   Completed: "bg-green-100 text-green-700",
   Cancelled: "bg-red-100 text-red-700",
 };
@@ -29,12 +31,43 @@ export default function Dashboard() {
   const [error, setError] = useState("");
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current month, -1 = prev, +1 = next
   const [selectedDay, setSelectedDay] = useState(() => new Date());
+  const [resending, setResending] = useState(false);
+  const [actingId, setActingId] = useState(null);
+  const { user } = useAuth();
+  const { showToast } = useToast();
+
+  const loadAppointments = () => api.get("/appointments").then((res) => setAppointments(res.data)).catch(() => {});
 
   useEffect(() => {
     api.get("/dashboard/stats").then((res) => setStats(res.data)).catch(() => setError("Could not load stats. Make sure backend & MongoDB are running."));
-    api.get("/appointments").then((res) => setAppointments(res.data)).catch(() => {});
+    loadAppointments();
     api.get("/patients?limit=5&page=1").then((res) => setRecentPatients(res.data.patients || [])).catch(() => {});
   }, []);
+
+  const resendVerification = async () => {
+    setResending(true);
+    try {
+      const res = await api.post("/auth/resend-verification");
+      showToast(res.data.message, res.data.sent ? "success" : "info");
+    } catch {
+      showToast("Could not send verification email", "error");
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const respondToRequest = async (id, status) => {
+    setActingId(id);
+    try {
+      await api.put(`/appointments/${id}`, { status });
+      showToast(status === "Scheduled" ? "Appointment approved — patient notified by email" : "Appointment declined — patient notified by email");
+      await loadAppointments();
+    } catch {
+      showToast("Could not update appointment", "error");
+    } finally {
+      setActingId(null);
+    }
+  };
 
   // ---- "Appointments Statistics" chart: real counts per day for the viewed month ----
   const chartDate = useMemo(() => {
@@ -104,6 +137,19 @@ export default function Dashboard() {
     <Layout>
       {error && <p className="bg-yellow-50 text-yellow-700 p-3 rounded-lg mb-6 text-sm">{error}</p>}
 
+      {user && user.emailVerified === false && (
+        <div className="flex items-center justify-between gap-4 bg-amber-50 border border-amber-200 text-amber-800 p-3.5 rounded-lg mb-6 text-sm">
+          <span className="flex items-center gap-2"><MailWarning size={16} /> Please verify your email address to secure your account.</span>
+          <button
+            disabled={resending}
+            onClick={resendVerification}
+            className="shrink-0 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition"
+          >
+            {resending ? "Sending..." : "Resend Verification Email"}
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Dashboard overview</h1>
         <div className="flex gap-3">
@@ -136,13 +182,44 @@ export default function Dashboard() {
             <p className="text-xs text-slate-400">Total Patients</p>
           </div>
         </div>
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-cyan-50 dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
-            <CalendarCheck2 size={22} />
+        <Link to="/appointments?status=Pending" className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 flex items-center gap-4 hover:border-amber-200 transition">
+          <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-slate-700 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <BellRing size={22} />
           </div>
           <div>
-            <p className="text-2xl font-bold text-slate-800 dark:text-white leading-tight">{stats?.upcomingAppointments ?? "-"}</p>
-            <p className="text-xs text-slate-400">Scheduled Appointments</p>
+            <p className="text-2xl font-bold text-slate-800 dark:text-white leading-tight">{stats?.pendingRequests ?? "-"}</p>
+            <p className="text-xs text-slate-400">Pending Requests</p>
+          </div>
+        </Link>
+      </div>
+
+      {/* Second row: monthly/today figures, for "how many patients came in this month / how much we've done today" at a glance */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+            <CalendarPlus size={22} />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-slate-800 dark:text-white leading-tight">{stats?.patientsThisMonth ?? "-"}</p>
+            <p className="text-xs text-slate-400">Patients This Month</p>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-green-50 dark:bg-slate-700 text-green-600 dark:text-green-400 flex items-center justify-center shrink-0">
+            <span className="text-lg font-bold">₹</span>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-slate-800 dark:text-white leading-tight">₹{(stats?.revenueToday ?? 0).toLocaleString()}</p>
+            <p className="text-xs text-slate-400">Collected Today</p>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-teal-50 dark:bg-slate-700 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+            <Check size={22} />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-slate-800 dark:text-white leading-tight">{stats?.completedToday ?? "-"}</p>
+            <p className="text-xs text-slate-400">Completed Today</p>
           </div>
         </div>
       </div>
@@ -255,12 +332,33 @@ export default function Dashboard() {
                   <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{a.patient?.name}</p>
                   <p className="text-xs text-slate-400 truncate">Dr. {a.dentist?.name} {a.reason ? `— ${a.reason}` : ""}</p>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-xs text-slate-500">{a.time}</p>
-                  <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_BADGE[a.status]}`}>
-                    {a.status}
-                  </span>
-                </div>
+                {a.status === "Pending" ? (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      disabled={actingId === a._id}
+                      onClick={() => respondToRequest(a._id, "Scheduled")}
+                      title="Approve"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-50"
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      disabled={actingId === a._id}
+                      onClick={() => respondToRequest(a._id, "Cancelled")}
+                      title="Decline"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-right shrink-0">
+                    <p className="text-xs text-slate-500">{a.time}</p>
+                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_BADGE[a.status]}`}>
+                      {a.status}
+                    </span>
+                  </div>
+                )}
               </div>
             ))}
           </div>

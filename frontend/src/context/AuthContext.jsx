@@ -29,8 +29,17 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const markEmailVerified = () => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, emailVerified: true };
+      localStorage.setItem("user", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, login, register, logout, markEmailVerified }}>
       {children}
     </AuthContext.Provider>
   );

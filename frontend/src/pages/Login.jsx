@@ -108,7 +108,7 @@ export default function Login() {
 
           <div className="flex items-center justify-between mt-4">
             <Link to="/register" className="text-sm text-emerald-800 font-medium hover:underline">
-              Create staff account
+              Create staff or admin account
             </Link>
             <button className="text-sm text-emerald-800 hover:underline">Forgot Password?</button>
           </div>

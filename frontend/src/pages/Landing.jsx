@@ -41,7 +41,7 @@ export default function Landing() {
         </p>
         <div className="flex justify-center gap-3 flex-wrap">
           <Link to="/register" className="bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg font-medium">
-            Register
+            Start Free
           </Link>
           <Link to="/login" className="border border-slate-200 dark:border-slate-700 px-6 py-3 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800">
             Staff Login

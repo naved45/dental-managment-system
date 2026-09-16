@@ -1,19 +1,54 @@
 import { useEffect, useRef, useState } from "react";
 import api from "../api/axios";
+import { useToast } from "../context/ToastContext";
+
+// How often to check for new notifications, in milliseconds. This is
+// polling (a lightweight background request), not a full page reload —
+// the admin/staff screen never refreshes, but new bookings still appear
+// within this interval without anyone touching the keyboard.
+const POLL_INTERVAL_MS = 5000;
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [count, setCount] = useState(0);
   const ref = useRef(null);
+  const seenIds = useRef(null); // null = not seeded yet (first load)
+  const { showToast } = useToast();
 
-  const loadCount = () => api.get("/notifications/unread-count").then((res) => setCount(res.data.count)).catch(() => {});
   const loadList = () => api.get("/notifications").then((res) => setNotifications(res.data)).catch(() => {});
 
+  const poll = async () => {
+    try {
+      const [countRes, listRes] = await Promise.all([
+        api.get("/notifications/unread-count"),
+        api.get("/notifications"),
+      ]);
+      setCount(countRes.data.count);
+
+      const latest = listRes.data;
+      if (seenIds.current === null) {
+        // First load: just remember what already exists, don't toast for old history.
+        seenIds.current = new Set(latest.map((n) => n._id));
+      } else {
+        const brandNew = latest.filter((n) => !seenIds.current.has(n._id));
+        brandNew.forEach((n) => {
+          const icon = n.type === "appointment" ? "📅" : n.type === "payment" ? "💳" : "🔔";
+          showToast(`${icon} ${n.message}`, "info", 7000);
+        });
+        latest.forEach((n) => seenIds.current.add(n._id));
+      }
+      if (open) setNotifications(latest);
+    } catch {
+      /* silent — polling failure shouldn't interrupt the UI */
+    }
+  };
+
   useEffect(() => {
-    loadCount();
-    const interval = setInterval(loadCount, 15000);
+    poll();
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

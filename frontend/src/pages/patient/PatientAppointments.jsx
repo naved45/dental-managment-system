@@ -10,15 +10,25 @@ export default function PatientAppointments() {
   }, []);
 
   const statusColor = {
-    Scheduled: "bg-amber-100 text-amber-700",
+    Pending: "bg-amber-100 text-amber-700",
+    Scheduled: "bg-blue-100 text-blue-700",
     Completed: "bg-green-100 text-green-700",
     Cancelled: "bg-red-100 text-red-700",
   };
+  const statusLabel = { Pending: "Pending Approval", Scheduled: "Confirmed" };
+  const hasPending = appointments.some((a) => a.status === "Pending");
 
   return (
     <PatientLayout>
       <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-1">My Appointments</h1>
       <p className="text-slate-500 dark:text-slate-400 mb-6">Your full appointment history</p>
+
+      {hasPending && (
+        <div className="bg-amber-50 border border-amber-100 text-amber-800 text-sm p-3.5 rounded-lg mb-6">
+          🕓 Some of your appointment requests are awaiting confirmation from the clinic. You'll get an
+          email as soon as they're approved.
+        </div>
+      )}
 
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-x-auto">
         <table className="w-full text-sm">
@@ -39,7 +49,7 @@ export default function PatientAppointments() {
                 <td className="p-3">Dr. {a.dentist?.name} <span className="text-xs text-slate-400">({a.dentist?.specialization})</span></td>
                 <td className="p-3">{a.reason || "-"}</td>
                 <td className="p-3">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[a.status]}`}>{a.status}</span>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[a.status]}`}>{statusLabel[a.status] || a.status}</span>
                 </td>
               </tr>
             ))}

@@ -63,10 +63,62 @@ function medicalReportEmail({ patientName, visitDate }) {
     <p>Your medical report from your visit on <b>${visitDate}</b> is attached as a PDF for your records.</p>`);
 }
 
+function appointmentPendingEmail({ patientName, dentistName, date, time, reason }) {
+  return wrapper("Appointment Request Received 🕓", `
+    <p>Hi ${patientName},</p>
+    <p>We've received your appointment request and it's now <b>pending confirmation</b> from our clinic staff:</p>
+    <table style="width:100%; border-collapse:collapse; margin:12px 0;">
+      <tr><td style="padding:6px 0; color:#64748b;">Dentist</td><td style="padding:6px 0;"><b>Dr. ${dentistName}</b></td></tr>
+      <tr><td style="padding:6px 0; color:#64748b;">Date</td><td style="padding:6px 0;"><b>${date}</b></td></tr>
+      <tr><td style="padding:6px 0; color:#64748b;">Time</td><td style="padding:6px 0;"><b>${time}</b></td></tr>
+      <tr><td style="padding:6px 0; color:#64748b;">Reason</td><td style="padding:6px 0;">${reason || "-"}</td></tr>
+    </table>
+    <p>You'll get another email as soon as the clinic confirms it.</p>`);
+}
+
+function appointmentApprovedEmail({ patientName, dentistName, date, time }) {
+  return wrapper("Your Appointment is Confirmed ✅", `
+    <p>Hi ${patientName},</p>
+    <p>Good news — the clinic has confirmed your appointment:</p>
+    <table style="width:100%; border-collapse:collapse; margin:12px 0;">
+      <tr><td style="padding:6px 0; color:#64748b;">Dentist</td><td style="padding:6px 0;"><b>Dr. ${dentistName}</b></td></tr>
+      <tr><td style="padding:6px 0; color:#64748b;">Date</td><td style="padding:6px 0;"><b>${date}</b></td></tr>
+      <tr><td style="padding:6px 0; color:#64748b;">Time</td><td style="padding:6px 0;"><b>${time}</b></td></tr>
+    </table>
+    <p>We look forward to seeing you!</p>`);
+}
+
+function appointmentDeclinedEmail({ patientName, dentistName, date, time }) {
+  return wrapper("Appointment Request Update", `
+    <p>Hi ${patientName},</p>
+    <p>Unfortunately the clinic wasn't able to accommodate this appointment request:</p>
+    <table style="width:100%; border-collapse:collapse; margin:12px 0;">
+      <tr><td style="padding:6px 0; color:#64748b;">Dentist</td><td style="padding:6px 0;"><b>Dr. ${dentistName}</b></td></tr>
+      <tr><td style="padding:6px 0; color:#64748b;">Date</td><td style="padding:6px 0;"><b>${date}</b></td></tr>
+      <tr><td style="padding:6px 0; color:#64748b;">Time</td><td style="padding:6px 0;"><b>${time}</b></td></tr>
+    </table>
+    <p>Please log in to the patient portal to request a different time, or contact the clinic directly.</p>`);
+}
+
+function emailVerificationEmail({ name, link }) {
+  return wrapper("Verify Your Email Address 📧", `
+    <p>Hi ${name},</p>
+    <p>Please confirm this is your email address by clicking the button below:</p>
+    <p style="text-align:center; margin:24px 0;">
+      <a href="${link}" style="background:#0e7490; color:#fff; text-decoration:none; padding:12px 28px; border-radius:8px; font-weight:bold; display:inline-block;">Verify Email</a>
+    </p>
+    <p style="color:#64748b; font-size:13px;">Or copy this link into your browser: ${link}</p>
+    <p style="color:#94a3b8; font-size:12px;">This link expires in 24 hours. If you didn't create this account, you can ignore this email.</p>`);
+}
+
 module.exports = {
   registrationEmail,
   appointmentConfirmationEmail,
+  appointmentPendingEmail,
+  appointmentApprovedEmail,
+  appointmentDeclinedEmail,
   appointmentReminderEmail,
   paymentReceiptEmail,
   medicalReportEmail,
+  emailVerificationEmail,
 };

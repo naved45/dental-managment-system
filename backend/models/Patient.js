@@ -17,6 +17,8 @@ const patientSchema = new mongoose.Schema(
     password: { type: String, select: false }, // only set once the patient registers for portal access
     hasPortalAccess: { type: Boolean, default: false },
     emailVerified: { type: Boolean, default: false },
+    emailVerificationToken: { type: String, select: false },
+    emailVerificationExpires: { type: Date, select: false },
   },
   { timestamps: true }
 );

@@ -4,7 +4,7 @@ import {
   eachDayOfInterval, format, isSameMonth, isSameDay, addMonths, subMonths,
 } from "date-fns";
 
-const statusDot = { Scheduled: "bg-amber-500", Completed: "bg-green-500", Cancelled: "bg-red-500" };
+const statusDot = { Pending: "bg-amber-500", Scheduled: "bg-blue-500", Completed: "bg-green-500", Cancelled: "bg-red-500" };
 
 export default function AppointmentCalendar({ appointments, onDayClick }) {
   const [month, setMonth] = useState(new Date());

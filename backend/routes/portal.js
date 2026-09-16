@@ -1,4 +1,5 @@
 const router = require("express").Router();
+const { param } = require("express-validator");
 const Patient = require("../models/Patient");
 const Appointment = require("../models/Appointment");
 const Invoice = require("../models/Invoice");
@@ -7,14 +8,20 @@ const Dentist = require("../models/Dentist");
 const Notification = require("../models/Notification");
 const auth = require("../middleware/auth");
 const patientOnly = require("../middleware/patientOnly");
+const validate = require("../middleware/validate");
+const { authedLimiter } = require("../middleware/rateLimiters");
+const { appointmentBookPortal } = require("../validators/schemas");
+const AppError = require("../utils/AppError");
 const { sendMail } = require("../config/mailer");
-const { paymentReceiptEmail, medicalReportEmail, appointmentConfirmationEmail } = require("../utils/emailTemplates");
+const { paymentReceiptEmail, medicalReportEmail, appointmentPendingEmail } = require("../utils/emailTemplates");
 const { generateReceiptPDF, generateMedicalReportPDF } = require("../utils/pdfGenerator");
+const { notifyStaff } = require("../config/socket");
+
+const MONGO_ID = (name) => param(name).isMongoId().withMessage("Invalid ID format");
 
 // Every route below requires a valid PATIENT portal login (not a staff token).
-router.use(auth, patientOnly);
+router.use(auth, patientOnly, authedLimiter);
 
-// Step 3: Patient's own dashboard summary
 router.get("/dashboard", async (req, res) => {
   const patientId = req.user.id;
   const [patient, appointments, invoices, records] = await Promise.all([
@@ -25,7 +32,7 @@ router.get("/dashboard", async (req, res) => {
   ]);
 
   const now = new Date();
-  const nextAppointment = appointments.find((a) => a.status === "Scheduled" && new Date(a.date) >= now) || null;
+  const nextAppointment = appointments.find((a) => ["Pending", "Scheduled"].includes(a.status) && new Date(a.date) >= now) || null;
   const totalVisits = appointments.filter((a) => a.status === "Completed").length;
   const outstandingBalance = invoices.reduce((sum, inv) => sum + (inv.totalAmount - inv.paidAmount), 0);
 
@@ -39,7 +46,6 @@ router.get("/dashboard", async (req, res) => {
   });
 });
 
-// Step 4: Appointment history
 router.get("/appointments", async (req, res) => {
   const appointments = await Appointment.find({ patient: req.user.id })
     .populate("dentist", "name specialization")
@@ -47,13 +53,11 @@ router.get("/appointments", async (req, res) => {
   res.json(appointments);
 });
 
-// Step 5: Payment history
 router.get("/invoices", async (req, res) => {
   const invoices = await Invoice.find({ patient: req.user.id }).sort({ createdAt: -1 });
   res.json(invoices);
 });
 
-// Step 6: Medical reports
 router.get("/records", async (req, res) => {
   const records = await MedicalRecord.find({ patient: req.user.id })
     .populate("dentist", "name specialization")
@@ -61,32 +65,29 @@ router.get("/records", async (req, res) => {
   res.json(records);
 });
 
-// Step 7: PDF download — payment receipt
-router.get("/invoices/:id/pdf", async (req, res) => {
+router.get("/invoices/:id/pdf", MONGO_ID("id"), validate, async (req, res) => {
   const invoice = await Invoice.findOne({ _id: req.params.id, patient: req.user.id });
-  if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+  if (!invoice) throw new AppError("Invoice not found", 404);
   const patient = await Patient.findById(req.user.id);
   const pdfBuffer = await generateReceiptPDF(invoice, patient);
   res.set({ "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename=receipt-${invoice._id}.pdf` });
   res.send(pdfBuffer);
 });
 
-// Step 7: PDF download — medical report
-router.get("/records/:id/pdf", async (req, res) => {
+router.get("/records/:id/pdf", MONGO_ID("id"), validate, async (req, res) => {
   const record = await MedicalRecord.findOne({ _id: req.params.id, patient: req.user.id });
-  if (!record) return res.status(404).json({ message: "Record not found" });
+  if (!record) throw new AppError("Record not found", 404);
   const patient = await Patient.findById(req.user.id);
   const pdfBuffer = await generateMedicalReportPDF(record, patient);
   res.set({ "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename=medical-report-${record._id}.pdf` });
   res.send(pdfBuffer);
 });
 
-// Step 9: Re-send payment receipt by email on demand
-router.post("/invoices/:id/email", async (req, res) => {
+router.post("/invoices/:id/email", MONGO_ID("id"), validate, async (req, res) => {
   const invoice = await Invoice.findOne({ _id: req.params.id, patient: req.user.id });
-  if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+  if (!invoice) throw new AppError("Invoice not found", 404);
   const patient = await Patient.findById(req.user.id);
-  if (!patient.email) return res.status(400).json({ message: "No email on file" });
+  if (!patient.email) throw new AppError("No email on file", 400);
 
   const pdfBuffer = await generateReceiptPDF(invoice, patient);
   const sent = await sendMail({
@@ -98,12 +99,11 @@ router.post("/invoices/:id/email", async (req, res) => {
   res.json({ sent, message: sent ? "Receipt emailed" : "Email not sent — SMTP not configured on the server" });
 });
 
-// Step 9: Email a medical report on demand
-router.post("/records/:id/email", async (req, res) => {
+router.post("/records/:id/email", MONGO_ID("id"), validate, async (req, res) => {
   const record = await MedicalRecord.findOne({ _id: req.params.id, patient: req.user.id });
-  if (!record) return res.status(404).json({ message: "Record not found" });
+  if (!record) throw new AppError("Record not found", 404);
   const patient = await Patient.findById(req.user.id);
-  if (!patient.email) return res.status(400).json({ message: "No email on file" });
+  if (!patient.email) throw new AppError("No email on file", 400);
 
   const pdfBuffer = await generateMedicalReportPDF(record, patient);
   const sent = await sendMail({
@@ -115,60 +115,61 @@ router.post("/records/:id/email", async (req, res) => {
   res.json({ sent, message: sent ? "Report emailed" : "Email not sent — SMTP not configured on the server" });
 });
 
-// See available doctors (read-only — just the public-facing profile fields)
 router.get("/doctors", async (req, res) => {
   const dentists = await Dentist.find().select("name specialization experienceYears").sort({ name: 1 });
   res.json(dentists);
 });
 
-// Patient self-service booking. Unlike the staff booking route, the patient
-// is NOT allowed to set which patient the appointment is for — it is always
-// forced to their own id, so a patient can never book on someone else's behalf.
-router.post("/appointments", async (req, res) => {
-  try {
-    const { dentist, date, time, reason } = req.body;
-    if (!dentist || !date || !time) {
-      return res.status(400).json({ message: "Dentist, date and time are required" });
-    }
+// Patient self-service booking — validated, and the patient id is always
+// forced to req.user.id (never trusted from the request body), so a patient
+// can never book an appointment on someone else's behalf.
+router.post("/appointments", appointmentBookPortal, validate, async (req, res) => {
+  const { dentist, date, time, reason } = req.body;
 
-    const appointment = await Appointment.create({
-      patient: req.user.id,
-      dentist,
-      date,
-      time,
-      reason,
-      status: "Scheduled",
-    });
-    const populated = await appointment.populate([
-      { path: "patient", select: "name email" },
-      { path: "dentist", select: "name" },
-    ]);
+  const appointment = await Appointment.create({
+    patient: req.user.id,
+    dentist,
+    date,
+    time,
+    reason,
+    status: "Pending",
+  });
+  const populated = await appointment.populate([
+    { path: "patient", select: "name email" },
+    { path: "dentist", select: "name" },
+  ]);
 
-    // Same notification staff see when they book — so a patient's self-booked
-    // appointment shows up in the staff/admin notification bell automatically.
-    Notification.create({
-      message: `New appointment: ${populated.patient?.name || "Patient"} with Dr. ${populated.dentist?.name || ""} on ${new Date(appointment.date).toLocaleDateString()} (booked via patient portal)`,
-      type: "appointment",
+  Notification.create({
+    message: `New appointment request: ${populated.patient?.name || "Patient"} with Dr. ${populated.dentist?.name || ""} on ${new Date(appointment.date).toLocaleDateString()} — awaiting approval`,
+    type: "appointment",
+  }).catch(() => {});
+
+  // Real-time push: every staff/admin browser currently open gets this
+  // instantly via WebSocket — no page reload, no polling delay.
+  notifyStaff("appointment:new", {
+    _id: appointment._id,
+    patientName: populated.patient?.name,
+    dentistName: populated.dentist?.name,
+    date: appointment.date,
+    time: appointment.time,
+    reason: appointment.reason,
+  });
+
+  if (populated.patient?.email) {
+    sendMail({
+      to: populated.patient.email,
+      subject: "Your DentalCare Appointment Request",
+      html: appointmentPendingEmail({
+        patientName: populated.patient.name,
+        dentistName: populated.dentist?.name || "",
+        date: new Date(appointment.date).toLocaleDateString(),
+        time: appointment.time,
+        reason: appointment.reason,
+      }),
     }).catch(() => {});
-
-    if (populated.patient?.email) {
-      sendMail({
-        to: populated.patient.email,
-        subject: "Your DentalCare Appointment is Confirmed",
-        html: appointmentConfirmationEmail({
-          patientName: populated.patient.name,
-          dentistName: populated.dentist?.name || "",
-          date: new Date(appointment.date).toLocaleDateString(),
-          time: appointment.time,
-          reason: appointment.reason,
-        }),
-      }).catch(() => {});
-    }
-
-    res.status(201).json(appointment);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
   }
+
+  res.status(201).json(appointment);
 });
 
 module.exports = router;

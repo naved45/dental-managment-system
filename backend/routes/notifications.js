@@ -1,8 +1,11 @@
 const router = require("express").Router();
+const { param } = require("express-validator");
 const Notification = require("../models/Notification");
 const auth = require("../middleware/auth");
+const validate = require("../middleware/validate");
+const { authedLimiter } = require("../middleware/rateLimiters");
 
-router.use(auth);
+router.use(auth, authedLimiter);
 
 router.get("/", async (req, res) => {
   const notifications = await Notification.find().sort({ createdAt: -1 }).limit(30);
@@ -14,7 +17,7 @@ router.get("/unread-count", async (req, res) => {
   res.json({ count });
 });
 
-router.put("/:id/read", async (req, res) => {
+router.put("/:id/read", param("id").isMongoId().withMessage("Invalid ID"), validate, async (req, res) => {
   const n = await Notification.findByIdAndUpdate(req.params.id, { read: true }, { new: true });
   res.json(n);
 });

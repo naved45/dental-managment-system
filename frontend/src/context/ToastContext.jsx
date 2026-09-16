@@ -5,12 +5,12 @@ const ToastContext = createContext(null);
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
-  const showToast = useCallback((message, type = "success") => {
+  const showToast = useCallback((message, type = "success", duration = 3000) => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, message, type }]);
     setTimeout(() => {
       setToasts((t) => t.filter((toast) => toast.id !== id));
-    }, 3000);
+    }, duration);
   }, []);
 
   return (

@@ -4,18 +4,23 @@ const Patient = require("../models/Patient");
 const Appointment = require("../models/Appointment");
 const Invoice = require("../models/Invoice");
 const auth = require("../middleware/auth");
+const { adminOnly } = require("../middleware/auth");
+const validate = require("../middleware/validate");
+const { authedLimiter } = require("../middleware/rateLimiters");
+const { patientCreate, patientUpdate, paginationQuery, MONGO_ID } = require("../validators/schemas");
+const AppError = require("../utils/AppError");
 
-router.use(auth);
+router.use(auth, authedLimiter);
 
-// Supports ?search=&gender=&page=&limit=
-router.get("/", async (req, res) => {
+router.get("/", paginationQuery, validate, async (req, res) => {
   const { search = "", gender = "", page = 1, limit = 10 } = req.query;
   const query = {};
   if (search) {
+    const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // avoid regex-injection via search input
     query.$or = [
-      { name: new RegExp(search, "i") },
-      { phone: new RegExp(search, "i") },
-      { email: new RegExp(search, "i") },
+      { name: new RegExp(escaped, "i") },
+      { phone: new RegExp(escaped, "i") },
+      { email: new RegExp(escaped, "i") },
     ];
   }
   if (gender) query.gender = gender;
@@ -28,25 +33,19 @@ router.get("/", async (req, res) => {
   res.json({ patients, total, page: Number(page), pages: Math.ceil(total / limit) || 1 });
 });
 
-// Export all patients as CSV
 router.get("/export/csv", async (req, res) => {
-  try {
-    const patients = await Patient.find().sort({ name: 1 }).lean();
-    const fields = ["name", "age", "gender", "phone", "email", "address", "bloodGroup", "medicalHistory"];
-    const parser = new Parser({ fields });
-    const csv = parser.parse(patients);
-    res.header("Content-Type", "text/csv");
-    res.attachment("patients.csv");
-    res.send(csv);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+  const patients = await Patient.find().sort({ name: 1 }).lean();
+  const fields = ["name", "age", "gender", "phone", "email", "address", "bloodGroup", "medicalHistory"];
+  const parser = new Parser({ fields });
+  const csv = parser.parse(patients);
+  res.header("Content-Type", "text/csv");
+  res.attachment("patients.csv");
+  res.send(csv);
 });
 
-// Full patient profile: patient + appointments + invoices + medical records
-router.get("/:id/full", async (req, res) => {
+router.get("/:id/full", MONGO_ID(), validate, async (req, res) => {
   const patient = await Patient.findById(req.params.id);
-  if (!patient) return res.status(404).json({ message: "Patient not found" });
+  if (!patient) throw new AppError("Patient not found", 404);
 
   const [appointments, invoices] = await Promise.all([
     Appointment.find({ patient: patient._id }).populate("dentist", "name specialization").sort({ date: -1 }),
@@ -56,28 +55,26 @@ router.get("/:id/full", async (req, res) => {
   res.json({ patient, appointments, invoices });
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", MONGO_ID(), validate, async (req, res) => {
   const patient = await Patient.findById(req.params.id);
-  if (!patient) return res.status(404).json({ message: "Patient not found" });
+  if (!patient) throw new AppError("Patient not found", 404);
   res.json(patient);
 });
 
-router.post("/", async (req, res) => {
-  try {
-    const patient = await Patient.create(req.body);
-    res.status(201).json(patient);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
+router.post("/", patientCreate, validate, async (req, res) => {
+  const patient = await Patient.create(req.body);
+  res.status(201).json(patient);
 });
 
-router.put("/:id", async (req, res) => {
-  const patient = await Patient.findByIdAndUpdate(req.params.id, req.body, { new: true });
+router.put("/:id", patientUpdate, validate, async (req, res) => {
+  const patient = await Patient.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  if (!patient) throw new AppError("Patient not found", 404);
   res.json(patient);
 });
 
-router.delete("/:id", async (req, res) => {
-  await Patient.findByIdAndDelete(req.params.id);
+router.delete("/:id", adminOnly, MONGO_ID(), validate, async (req, res) => {
+  const patient = await Patient.findByIdAndDelete(req.params.id);
+  if (!patient) throw new AppError("Patient not found", 404);
   res.json({ message: "Patient deleted" });
 });
 
